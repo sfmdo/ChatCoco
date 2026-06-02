@@ -6,6 +6,11 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.Component;
 
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -20,6 +25,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.Box;
+import javax.swing.JScrollBar;
+import javax.swing.SwingUtilities;
 
 public class Content extends JFrame { 
 //Esta versión reutiliza el panel de chat en varias pestañas, pero cada pestaña crea su propio chatArea
@@ -33,7 +41,13 @@ public class Content extends JFrame {
     private JPanel contentPanel;
     private CardLayout cardLayout;
 
-    private JTextArea chatArea;
+    private JPanel chatPanel;
+    private JPanel usersSplitPane;
+    private JPanel friendsSplitPane;
+    private JPanel groupsSplitPane;
+
+    private JPanel messagesContainer;
+    private JScrollPane messagesScrollPane;
     private JTextField messageField;
     private JLabel chatTitleLabel;
 
@@ -59,6 +73,9 @@ public class Content extends JFrame {
         setLayout(new BorderLayout(10, 10));
 
         createHeader();
+
+        // Inicializamos la instancia compartida de chatPanel
+        chatPanel = createChatPanel();
 
         cardLayout = new CardLayout();
         contentPanel = new JPanel(cardLayout);
@@ -142,9 +159,8 @@ public class Content extends JFrame {
         });
 
         JPanel leftPanel = createLeftPanel("Usuarios disponibles", usersList, messageButton, addFriendButton);
-        JPanel chatPanel = createChatPanel();
-
-        return createMainSplitPanel(leftPanel, chatPanel);
+        usersSplitPane = createMainSplitPanel(leftPanel, chatPanel);
+        return usersSplitPane;
     }
 
     private JPanel createFriendsPanel() {
@@ -181,9 +197,8 @@ public class Content extends JFrame {
         });
 
         JPanel leftPanel = createLeftPanel("Mis amigos", friendsList, openChatButton, removeFriendButton);
-        JPanel chatPanel = createChatPanel();
-
-        return createMainSplitPanel(leftPanel, chatPanel);
+        friendsSplitPane = createMainSplitPanel(leftPanel, chatPanel);
+        return friendsSplitPane;
     }
 
     private JPanel createGroupsPanel() {
@@ -256,9 +271,8 @@ public class Content extends JFrame {
         });
 
         JPanel leftPanel = createLeftPanel("Mis grupos", groupsList, openGroupButton, createGroupButton, inviteButton);
-        JPanel chatPanel = createChatPanel();
-
-        return createMainSplitPanel(leftPanel, chatPanel);
+        groupsSplitPane = createMainSplitPanel(leftPanel, chatPanel);
+        return groupsSplitPane;
     }
 
     private JPanel createNotificationsPanel() {
@@ -379,18 +393,22 @@ public class Content extends JFrame {
     }
 
     public void loadConversationMessages(java.util.List<Messages.MessagePacket> messages) {
-        chatArea.setText("");
-        chatArea.append("Sistema: Historial de " + selectedChat + " cargado.\n");
+        messagesContainer.removeAll();
+        addMessageBubble("Sistema", "Historial de " + selectedChat + " cargado.", false);
         for (Messages.MessagePacket msg : messages) {
             String from = msg.getParam("from");
             String text = msg.getParam("text");
-            chatArea.append((from != null ? from : "Desconocido") + ": " + text + "\n");
+            boolean isSelf = "Yo".equalsIgnoreCase(from);
+            addMessageBubble(from != null ? from : "Desconocido", text, isSelf);
         }
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
     }
 
     public void appendIncomingMessage(String from, String text) {
-        if (chatArea != null) {
-            chatArea.append((from != null ? from : "Desconocido") + ": " + text + "\n");
+        if (messagesContainer != null) {
+            boolean isSelf = "Yo".equalsIgnoreCase(from);
+            addMessageBubble(from != null ? from : "Desconocido", text, isSelf);
         }
     }
 
@@ -430,10 +448,13 @@ public class Content extends JFrame {
         chatTitleLabel = new JLabel(selectedChat);
         chatTitleLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        chatArea = new JTextArea();
-        chatArea.setEditable(false);
-        chatArea.setLineWrap(true);
-        chatArea.setWrapStyleWord(true);
+        messagesContainer = new JPanel();
+        messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
+        messagesContainer.setBackground(Color.WHITE);
+
+        messagesScrollPane = new JScrollPane(messagesContainer);
+        messagesScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        messagesScrollPane.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
 
         messageField = new JTextField();
 
@@ -447,7 +468,7 @@ public class Content extends JFrame {
         bottomPanel.add(sendButton, BorderLayout.EAST);
 
         panel.add(chatTitleLabel, BorderLayout.NORTH);
-        panel.add(new JScrollPane(chatArea), BorderLayout.CENTER);
+        panel.add(messagesScrollPane, BorderLayout.CENTER);
         panel.add(bottomPanel, BorderLayout.SOUTH);
 
         return panel;
@@ -466,9 +487,15 @@ public class Content extends JFrame {
             chatTitleLabel.setText(selectedChat);
         }
 
-        if (chatArea != null) {
-            chatArea.setText("");
-            chatArea.append("Sistema: Abriste " + selectedChat + "\n");
+        if (messagesContainer != null) {
+            messagesContainer.removeAll();
+            addMessageBubble("Sistema", "Abriste " + selectedChat, false);
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+            if (messagesScrollPane != null) {
+                messagesScrollPane.revalidate();
+                messagesScrollPane.repaint();
+            }
         }
 
         Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
@@ -517,8 +544,92 @@ public class Content extends JFrame {
             conn.sendPacket(packet);
         }
 
-        chatArea.append("Yo: " + text + "\n");
+        addMessageBubble("Yo", text, true);
         messageField.setText("");
+    }
+
+    private void addMessageBubble(String sender, String text, boolean isSelf) {
+        JPanel wrapper = new JPanel(new FlowLayout(isSelf ? FlowLayout.RIGHT : FlowLayout.LEFT, 10, 1)) {
+            @Override
+            public Dimension getMaximumSize() {
+                Dimension pref = getPreferredSize();
+                return new Dimension(Integer.MAX_VALUE, pref.height);
+            }
+        };
+        wrapper.setOpaque(false);
+
+        // Sender label
+        JLabel senderLabel = new JLabel(isSelf ? "Yo" : sender);
+        senderLabel.setFont(new Font("SansSerif", Font.BOLD, 10));
+        senderLabel.setForeground(Color.GRAY);
+
+        // Bubble shape panel
+        JPanel bubble = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // Si es propio: azul suave; si es ajeno o sistema: gris suave
+                if ("Sistema".equalsIgnoreCase(sender)) {
+                    g2.setColor(new Color(245, 245, 245));
+                } else {
+                    g2.setColor(isSelf ? new Color(195, 235, 255) : new Color(230, 230, 230));
+                }
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        bubble.setOpaque(false);
+        bubble.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        bubble.setLayout(new BorderLayout());
+
+        // Text inside bubble
+        JTextArea textArea = new JTextArea(text);
+        textArea.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        if ("Sistema".equalsIgnoreCase(sender)) {
+            textArea.setFont(new Font("SansSerif", Font.ITALIC, 11));
+            textArea.setForeground(Color.DARK_GRAY);
+        }
+        textArea.setEditable(false);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setOpaque(false);
+        textArea.setBackground(new Color(0,0,0,0));
+        textArea.setColumns(25);
+        bubble.add(textArea, BorderLayout.CENTER);
+
+        // Si es propio (isSelf), primero va la burbuja y luego la etiqueta "Yo" a la derecha
+        // Si es ajeno, primero va la etiqueta con el nombre del remitente y luego la burbuja a la derecha
+        if (isSelf) {
+            wrapper.add(bubble);
+            wrapper.add(Box.createHorizontalStrut(5));
+            wrapper.add(senderLabel);
+        } else {
+            if (!"Sistema".equalsIgnoreCase(sender)) {
+                wrapper.add(senderLabel);
+                wrapper.add(Box.createHorizontalStrut(5));
+            }
+            wrapper.add(bubble);
+        }
+
+        messagesContainer.add(wrapper);
+        messagesContainer.add(Box.createVerticalStrut(2));
+        
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
+        if (messagesScrollPane != null) {
+            messagesScrollPane.revalidate();
+            messagesScrollPane.repaint();
+        }
+
+        // Scroll to bottom
+        SwingUtilities.invokeLater(() -> {
+            if (messagesScrollPane != null) {
+                JScrollBar vertical = messagesScrollPane.getVerticalScrollBar();
+                vertical.setValue(vertical.getMaximum());
+            }
+        });
     }
 
     private String getNameOnly(String text) {
@@ -531,6 +642,21 @@ public class Content extends JFrame {
 
     private void showCard(String card) {
         cardLayout.show(contentPanel, card);
+        if (CARD_USERS.equals(card) && usersSplitPane != null) {
+            usersSplitPane.add(chatPanel, BorderLayout.CENTER);
+            usersSplitPane.revalidate();
+            usersSplitPane.repaint();
+        } else if (CARD_FRIENDS.equals(card) && friendsSplitPane != null) {
+            friendsSplitPane.add(chatPanel, BorderLayout.CENTER);
+            friendsSplitPane.revalidate();
+            friendsSplitPane.repaint();
+        } else if (CARD_GROUPS.equals(card) && groupsSplitPane != null) {
+            groupsSplitPane.add(chatPanel, BorderLayout.CENTER);
+            groupsSplitPane.revalidate();
+            groupsSplitPane.repaint();
+        }
+        revalidate();
+        repaint();
     }
 
     private void showWarning(String message) {
