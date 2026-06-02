@@ -5,22 +5,44 @@ import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GridLayout;
+
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
 
-public class Content extends JFrame {
+public class Content extends JFrame { 
+//Esta versión reutiliza el panel de chat en varias pestañas, pero cada pestaña crea su propio chatArea
+//convendría tener un solo panel de chat global y cambiar solo la lista izquierda
     private static final String CARD_USERS = "USERS";
     private static final String CARD_FRIENDS = "FRIENDS";
     private static final String CARD_GROUPS = "GROUPS";
+    private static final String CARD_NOTIFICATIONS = "NOTIFICATIONS";
 
     private JPanel headerPanel;
     private JPanel contentPanel;
     private CardLayout cardLayout;
+
+    private JTextArea chatArea;
+    private JTextField messageField;
+    private JLabel chatTitleLabel;
+
+    private String selectedChat = "Ningún chat seleccionado";
+
+    private DefaultListModel<String> usersModel;
+    private DefaultListModel<String> friendsModel;
+    private DefaultListModel<String> groupsModel;
+    private DefaultListModel<String> notificationsModel;
 
     public Content() {
         super("ChatCoco");
@@ -29,24 +51,12 @@ public class Content extends JFrame {
 
     public void init() {
         setTitle("ChatCoco");
-        setSize(900, 650);
+        setSize(950, 650);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
 
-        headerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
-        headerPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.GRAY, 1),
-                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
-        headerPanel.setBackground(new Color(245, 245, 245));
-
-        JButton usersButton = createHeaderButton("Usuarios", CARD_USERS);
-        JButton friendsButton = createHeaderButton("Amigos", CARD_FRIENDS);
-        JButton groupsButton = createHeaderButton("Grupos", CARD_GROUPS);
-
-        headerPanel.add(usersButton);
-        headerPanel.add(friendsButton);
-        headerPanel.add(groupsButton);
+        createHeader();
 
         cardLayout = new CardLayout();
         contentPanel = new JPanel(cardLayout);
@@ -54,6 +64,7 @@ public class Content extends JFrame {
         contentPanel.add(createUsersPanel(), CARD_USERS);
         contentPanel.add(createFriendsPanel(), CARD_FRIENDS);
         contentPanel.add(createGroupsPanel(), CARD_GROUPS);
+        contentPanel.add(createNotificationsPanel(), CARD_NOTIFICATIONS);
 
         add(headerPanel, BorderLayout.NORTH);
         add(contentPanel, BorderLayout.CENTER);
@@ -61,125 +72,322 @@ public class Content extends JFrame {
         showCard(CARD_USERS);
     }
 
+    private void createHeader() {
+        headerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.GRAY, 1),
+                BorderFactory.createEmptyBorder(8, 8, 8, 8)
+        ));
+        headerPanel.setBackground(new Color(245, 245, 245));
+
+        JButton usersButton = createHeaderButton("Usuarios", CARD_USERS);
+        JButton friendsButton = createHeaderButton("Amigos", CARD_FRIENDS);
+        JButton groupsButton = createHeaderButton("Grupos", CARD_GROUPS);
+        JButton notificationsButton = createHeaderButton("Notificaciones", CARD_NOTIFICATIONS);
+
+        headerPanel.add(usersButton);
+        headerPanel.add(friendsButton);
+        headerPanel.add(groupsButton);
+        headerPanel.add(notificationsButton);
+    }
+
     private JButton createHeaderButton(String text, String cardName) {
         JButton button = new JButton(text);
-        button.setPreferredSize(new Dimension(120, 32));
+        button.setPreferredSize(new Dimension(140, 32));
         button.addActionListener(e -> showCard(cardName));
         return button;
     }
 
     private JPanel createUsersPanel() {
-        JPanel panel = createPanelWithTitle("Usuarios");
-        panel.add(createUserCard("Oscar", true));
-        panel.add(createUserCard("Lucia", false));
-        panel.add(createMessageCard("Bienvenido a ChatCoco", "01/06/2026"));
-        return wrapInScroll(panel);
+        usersModel = new DefaultListModel<>();
+        usersModel.addElement("Oscar - En línea");
+        usersModel.addElement("Lucia - Desconectado");
+        usersModel.addElement("Carlos - En línea");
+        usersModel.addElement("Mariana - En línea");
+
+        JList<String> usersList = createList(usersModel);
+
+        JButton messageButton = new JButton("Enviar mensaje");
+        JButton addFriendButton = new JButton("Agregar amigo");
+
+        messageButton.addActionListener(e -> {
+            String selected = usersList.getSelectedValue();
+
+            if (selected == null) {
+                showWarning("Selecciona un usuario primero.");
+                return;
+            }
+
+            openChat("Chat con " + getNameOnly(selected));
+        });
+
+        addFriendButton.addActionListener(e -> {
+            String selected = usersList.getSelectedValue();
+
+            if (selected == null) {
+                showWarning("Selecciona un usuario primero.");
+                return;
+            }
+
+            String name = getNameOnly(selected);
+
+            if (!friendsModel.contains(name + " - En línea")) {
+                friendsModel.addElement(name + " - En línea");
+            }
+
+            notificationsModel.addElement("Solicitud enviada a " + name);
+            JOptionPane.showMessageDialog(this, "Solicitud de amistad enviada a " + name);
+        });
+
+        JPanel leftPanel = createLeftPanel("Usuarios disponibles", usersList, messageButton, addFriendButton);
+        JPanel chatPanel = createChatPanel();
+
+        return createMainSplitPanel(leftPanel, chatPanel);
     }
 
     private JPanel createFriendsPanel() {
-        JPanel panel = createPanelWithTitle("Amigos");
-        panel.add(createUserCard("Amigo 1", true));
-        panel.add(createUserCard("Amigo 2", true));
-        panel.add(createMessageCard("Chat con amigos activado", "01/06/2026"));
-        return wrapInScroll(panel);
+        friendsModel = new DefaultListModel<>();
+        friendsModel.addElement("Amigo 1 - En línea");
+        friendsModel.addElement("Amigo 2 - En línea");
+
+        JList<String> friendsList = createList(friendsModel);
+
+        JButton openChatButton = new JButton("Abrir chat");
+        JButton removeFriendButton = new JButton("Eliminar amigo");
+
+        openChatButton.addActionListener(e -> {
+            String selected = friendsList.getSelectedValue();
+
+            if (selected == null) {
+                showWarning("Selecciona un amigo primero.");
+                return;
+            }
+
+            openChat("Chat privado con " + getNameOnly(selected));
+        });
+
+        removeFriendButton.addActionListener(e -> {
+            String selected = friendsList.getSelectedValue();
+
+            if (selected == null) {
+                showWarning("Selecciona un amigo primero.");
+                return;
+            }
+
+            friendsModel.removeElement(selected);
+            notificationsModel.addElement("Eliminaste a " + getNameOnly(selected) + " de amigos");
+        });
+
+        JPanel leftPanel = createLeftPanel("Mis amigos", friendsList, openChatButton, removeFriendButton);
+        JPanel chatPanel = createChatPanel();
+
+        return createMainSplitPanel(leftPanel, chatPanel);
     }
 
     private JPanel createGroupsPanel() {
-        JPanel panel = createPanelWithTitle("Grupos");
-        panel.add(createGroupCard("Grupo de Estudio", "Miembros: 12"));
-        panel.add(createGroupCard("Grupo de Trabajo", "Miembros: 8"));
-        panel.add(createMessageCard("Selecciona un grupo para ver mensajes", "01/06/2026"));
-        return wrapInScroll(panel);
+        groupsModel = new DefaultListModel<>();
+        groupsModel.addElement("Grupo de Estudio");
+        groupsModel.addElement("Grupo de Trabajo");
+
+        JList<String> groupsList = createList(groupsModel);
+
+        JButton openGroupButton = new JButton("Abrir chat");
+        JButton createGroupButton = new JButton("Crear grupo");
+        JButton inviteButton = new JButton("Invitar persona");
+
+        openGroupButton.addActionListener(e -> {
+            String selected = groupsList.getSelectedValue();
+
+            if (selected == null) {
+                showWarning("Selecciona un grupo primero.");
+                return;
+            }
+
+            openChat("Chat del grupo: " + selected);
+        });
+
+        createGroupButton.addActionListener(e -> {
+            String groupName = JOptionPane.showInputDialog(this, "Nombre del grupo:");
+
+            if (groupName == null || groupName.trim().isEmpty()) {
+                return;
+            }
+
+            groupsModel.addElement(groupName.trim());
+            notificationsModel.addElement("Grupo creado: " + groupName.trim());
+        });
+
+        inviteButton.addActionListener(e -> {
+            String selectedGroup = groupsList.getSelectedValue();
+
+            if (selectedGroup == null) {
+                showWarning("Selecciona un grupo primero.");
+                return;
+            }
+
+            String userName = JOptionPane.showInputDialog(this, "Nombre del usuario a invitar:");
+
+            if (userName == null || userName.trim().isEmpty()) {
+                return;
+            }
+
+            notificationsModel.addElement("Invitaste a " + userName.trim() + " al grupo " + selectedGroup);
+            JOptionPane.showMessageDialog(this, "Invitación enviada a " + userName.trim());
+        });
+
+        JPanel leftPanel = createLeftPanel("Mis grupos", groupsList, openGroupButton, createGroupButton, inviteButton);
+        JPanel chatPanel = createChatPanel();
+
+        return createMainSplitPanel(leftPanel, chatPanel);
     }
 
-    private JPanel createPanelWithTitle(String title) {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createTitledBorder(title),
-                BorderFactory.createEmptyBorder(12, 12, 12, 12)));
-        panel.setBackground(Color.WHITE);
+    private JPanel createNotificationsPanel() {
+        notificationsModel = new DefaultListModel<>();
+        notificationsModel.addElement("Bienvenido a ChatCoco");
+        notificationsModel.addElement("No tienes solicitudes pendientes");
+
+        JList<String> notificationsList = createList(notificationsModel);
+
+        JButton markReadButton = new JButton("Marcar como leída");
+        JButton clearButton = new JButton("Limpiar notificaciones");
+
+        markReadButton.addActionListener(e -> {
+            String selected = notificationsList.getSelectedValue();
+
+            if (selected == null) {
+                showWarning("Selecciona una notificación primero.");
+                return;
+            }
+
+            int index = notificationsList.getSelectedIndex();
+            notificationsModel.set(index, "[Leída] " + selected);
+        });
+
+        clearButton.addActionListener(e -> notificationsModel.clear());
+
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createTitledBorder("Notificaciones"));
+
+        panel.add(new JScrollPane(notificationsList), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(markReadButton);
+        buttonPanel.add(clearButton);
+
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
         return panel;
     }
 
-    private JPanel wrapInScroll(JPanel panel) {
-        JScrollPane scroll = new JScrollPane(panel);
-        scroll.setBorder(BorderFactory.createEmptyBorder());
-        JPanel wrapper = new JPanel(new BorderLayout());
-        wrapper.add(scroll, BorderLayout.CENTER);
-        return wrapper;
+    private JPanel createMainSplitPanel(JPanel leftPanel, JPanel rightPanel) {
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        leftPanel.setPreferredSize(new Dimension(280, 600));
+
+        mainPanel.add(leftPanel, BorderLayout.WEST);
+        mainPanel.add(rightPanel, BorderLayout.CENTER);
+
+        return mainPanel;
     }
 
-    public void CrearVisualUsuario(String nombre, boolean estado) {
-        JPanel userPanel = createUserCard(nombre, estado);
-        contentPanel.add(userPanel, CARD_USERS);
+    private JPanel createLeftPanel(String title, JList<String> list, JButton... buttons) {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createTitledBorder(title));
+
+        panel.add(new JScrollPane(list), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new GridLayout(buttons.length, 1, 5, 5));
+
+        for (JButton button : buttons) {
+            buttonPanel.add(button);
+        }
+
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        return panel;
     }
 
-    public void crearVisualMensaje(String mensaje, String fecha) {
-        JPanel messagePanel = createMessageCard(mensaje, fecha);
-        contentPanel.add(messagePanel, CARD_USERS);
+    private JPanel createChatPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createTitledBorder("Conversación"));
+
+        chatTitleLabel = new JLabel(selectedChat);
+        chatTitleLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        chatArea = new JTextArea();
+        chatArea.setEditable(false);
+        chatArea.setLineWrap(true);
+        chatArea.setWrapStyleWord(true);
+
+        messageField = new JTextField();
+
+        JButton sendButton = new JButton("Enviar");
+
+        sendButton.addActionListener(e -> sendMessage());
+        messageField.addActionListener(e -> sendMessage());
+
+        JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
+        bottomPanel.add(messageField, BorderLayout.CENTER);
+        bottomPanel.add(sendButton, BorderLayout.EAST);
+
+        panel.add(chatTitleLabel, BorderLayout.NORTH);
+        panel.add(new JScrollPane(chatArea), BorderLayout.CENTER);
+        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        return panel;
     }
 
-    public void visualGrupos() {
-        showCard(CARD_GROUPS);
+    private JList<String> createList(DefaultListModel<String> model) {
+        JList<String> list = new JList<>(model);
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        return list;
     }
 
-    public void visualAmigos() {
-        showCard(CARD_FRIENDS);
+    private void openChat(String title) {
+        selectedChat = title;
+
+        if (chatTitleLabel != null) {
+            chatTitleLabel.setText(selectedChat);
+        }
+
+        if (chatArea != null) {
+            chatArea.setText("");
+            chatArea.append("Sistema: Abriste " + selectedChat + "\n");
+        }
     }
 
-    private JPanel createUserCard(String nombre, boolean online) {
-        JPanel userPanel = new JPanel();
-        userPanel.setLayout(new BoxLayout(userPanel, BoxLayout.Y_AXIS));
-        userPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(200, 200, 200)),
-                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
-        userPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
-        userPanel.setBackground(new Color(250, 250, 250));
+    private void sendMessage() {
+        String text = messageField.getText().trim();
 
-        JLabel nameLabel = new JLabel("Nombre: " + nombre);
-        JLabel statusLabel = new JLabel("Estado: " + (online ? "En línea" : "Desconectado"));
-        userPanel.add(nameLabel);
-        userPanel.add(statusLabel);
+        if (selectedChat.equals("Ningún chat seleccionado")) {
+            showWarning("Primero abre un chat.");
+            return;
+        }
 
-        return userPanel;
+        if (text.isEmpty()) {
+            return;
+        }
+
+        chatArea.append("Yo: " + text + "\n");
+        messageField.setText("");
+
+        notificationsModel.addElement("Mensaje enviado en " + selectedChat);
     }
 
-    private JPanel createGroupCard(String nombre, String descripcion) {
-        JPanel groupPanel = new JPanel();
-        groupPanel.setLayout(new BoxLayout(groupPanel, BoxLayout.Y_AXIS));
-        groupPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(200, 200, 200)),
-                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
-        groupPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
-        groupPanel.setBackground(new Color(250, 250, 250));
+    private String getNameOnly(String text) {
+        if (text.contains("-")) {
+            return text.substring(0, text.indexOf("-")).trim();
+        }
 
-        JLabel nameLabel = new JLabel("Grupo: " + nombre);
-        JLabel descLabel = new JLabel(descripcion);
-        groupPanel.add(nameLabel);
-        groupPanel.add(descLabel);
-
-        return groupPanel;
-    }
-
-    private JPanel createMessageCard(String mensaje, String fecha) {
-        JPanel messagePanel = new JPanel();
-        messagePanel.setLayout(new BoxLayout(messagePanel, BoxLayout.Y_AXIS));
-        messagePanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(200, 200, 200)),
-                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
-        messagePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
-        messagePanel.setBackground(new Color(250, 250, 250));
-
-        JLabel messageLabel = new JLabel(mensaje);
-        JLabel dateLabel = new JLabel("Fecha: " + fecha);
-        messagePanel.add(messageLabel);
-        messagePanel.add(dateLabel);
-
-        return messagePanel;
+        return text.trim();
     }
 
     private void showCard(String card) {
         cardLayout.show(contentPanel, card);
+    }
+
+    private void showWarning(String message) {
+        JOptionPane.showMessageDialog(this, message, "Aviso", JOptionPane.WARNING_MESSAGE);
     }
 }
