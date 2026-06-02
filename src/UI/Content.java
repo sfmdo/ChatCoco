@@ -6,6 +6,11 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.Component;
 
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -20,6 +25,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.Box;
+import javax.swing.JScrollBar;
+import javax.swing.SwingUtilities;
 
 public class Content extends JFrame { 
 //Esta versión reutiliza el panel de chat en varias pestañas, pero cada pestaña crea su propio chatArea
@@ -33,7 +41,13 @@ public class Content extends JFrame {
     private JPanel contentPanel;
     private CardLayout cardLayout;
 
-    private JTextArea chatArea;
+    private JPanel chatPanel;
+    private JPanel usersSplitPane;
+    private JPanel friendsSplitPane;
+    private JPanel groupsSplitPane;
+
+    private JPanel messagesContainer;
+    private JScrollPane messagesScrollPane;
     private JTextField messageField;
     private JLabel chatTitleLabel;
 
@@ -43,9 +57,11 @@ public class Content extends JFrame {
     private DefaultListModel<String> friendsModel;
     private DefaultListModel<String> groupsModel;
     private DefaultListModel<String> notificationsModel;
+    private JPanel notificationsContainer;
 
     public Content() {
         super("ChatCoco");
+        Network.ClientRouter.setUI(this);
         init();
     }
 
@@ -57,6 +73,9 @@ public class Content extends JFrame {
         setLayout(new BorderLayout(10, 10));
 
         createHeader();
+
+        // Inicializamos la instancia compartida de chatPanel
+        chatPanel = createChatPanel();
 
         cardLayout = new CardLayout();
         contentPanel = new JPanel(cardLayout);
@@ -140,9 +159,8 @@ public class Content extends JFrame {
         });
 
         JPanel leftPanel = createLeftPanel("Usuarios disponibles", usersList, messageButton, addFriendButton);
-        JPanel chatPanel = createChatPanel();
-
-        return createMainSplitPanel(leftPanel, chatPanel);
+        usersSplitPane = createMainSplitPanel(leftPanel, chatPanel);
+        return usersSplitPane;
     }
 
     private JPanel createFriendsPanel() {
@@ -179,9 +197,8 @@ public class Content extends JFrame {
         });
 
         JPanel leftPanel = createLeftPanel("Mis amigos", friendsList, openChatButton, removeFriendButton);
-        JPanel chatPanel = createChatPanel();
-
-        return createMainSplitPanel(leftPanel, chatPanel);
+        friendsSplitPane = createMainSplitPanel(leftPanel, chatPanel);
+        return friendsSplitPane;
     }
 
     private JPanel createGroupsPanel() {
@@ -213,8 +230,17 @@ public class Content extends JFrame {
                 return;
             }
 
-            groupsModel.addElement(groupName.trim());
-            notificationsModel.addElement("Grupo creado: " + groupName.trim());
+            String trimmedGroupName = groupName.trim();
+            groupsModel.addElement(trimmedGroupName);
+
+            Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
+            if (conn != null) {
+                Messages.MessagePacket packet = Messages.MessagePacket.event(Network.Protocol.GROUP_CREATE);
+                packet.add("groupName", trimmedGroupName);
+                conn.sendPacket(packet);
+            }
+            
+            addNotification("Grupo creado localmente: " + trimmedGroupName, "", "SYSTEM");
         });
 
         inviteButton.addActionListener(e -> {
@@ -231,52 +257,159 @@ public class Content extends JFrame {
                 return;
             }
 
-            notificationsModel.addElement("Invitaste a " + userName.trim() + " al grupo " + selectedGroup);
-            JOptionPane.showMessageDialog(this, "Invitación enviada a " + userName.trim());
+            String trimmedUserName = userName.trim();
+            Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
+            if (conn != null) {
+                Messages.MessagePacket packet = Messages.MessagePacket.event(Network.Protocol.GROUP_INVITE);
+                packet.add("groupName", selectedGroup);
+                packet.add("invitee", trimmedUserName);
+                conn.sendPacket(packet);
+            }
+
+            addNotification("Invitaste a " + trimmedUserName + " al grupo " + selectedGroup, "", "SYSTEM");
+            JOptionPane.showMessageDialog(this, "Invitación enviada a " + trimmedUserName);
         });
 
         JPanel leftPanel = createLeftPanel("Mis grupos", groupsList, openGroupButton, createGroupButton, inviteButton);
-        JPanel chatPanel = createChatPanel();
-
-        return createMainSplitPanel(leftPanel, chatPanel);
+        groupsSplitPane = createMainSplitPanel(leftPanel, chatPanel);
+        return groupsSplitPane;
     }
 
     private JPanel createNotificationsPanel() {
         notificationsModel = new DefaultListModel<>();
-        notificationsModel.addElement("Bienvenido a ChatCoco");
-        notificationsModel.addElement("No tienes solicitudes pendientes");
+        notificationsContainer = new JPanel();
+        notificationsContainer.setLayout(new BoxLayout(notificationsContainer, BoxLayout.Y_AXIS));
+        notificationsContainer.setBackground(Color.WHITE);
 
-        JList<String> notificationsList = createList(notificationsModel);
+        JScrollPane scrollPane = new JScrollPane(notificationsContainer);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-        JButton markReadButton = new JButton("Marcar como leída");
         JButton clearButton = new JButton("Limpiar notificaciones");
-
-        markReadButton.addActionListener(e -> {
-            String selected = notificationsList.getSelectedValue();
-
-            if (selected == null) {
-                showWarning("Selecciona una notificación primero.");
-                return;
-            }
-
-            int index = notificationsList.getSelectedIndex();
-            notificationsModel.set(index, "[Leída] " + selected);
+        clearButton.addActionListener(e -> {
+            notificationsContainer.removeAll();
+            notificationsContainer.revalidate();
+            notificationsContainer.repaint();
         });
-
-        clearButton.addActionListener(e -> notificationsModel.clear());
 
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Notificaciones"));
-
-        panel.add(new JScrollPane(notificationsList), BorderLayout.CENTER);
+        panel.add(scrollPane, BorderLayout.CENTER);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        buttonPanel.add(markReadButton);
         buttonPanel.add(clearButton);
-
         panel.add(buttonPanel, BorderLayout.SOUTH);
 
+        // Notificación de bienvenida inicial
+        addNotification("Bienvenido a ChatCoco", "", "SYSTEM");
+
         return panel;
+    }
+
+    public void addNotification(String content, String relatedId, String type) {
+        JPanel card = new JPanel(new BorderLayout(10, 5));
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY),
+            BorderFactory.createEmptyBorder(8, 12, 8, 12)
+        ));
+        card.setBackground(Color.WHITE);
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 65));
+
+        JLabel label = new JLabel(content);
+        card.add(label, BorderLayout.CENTER);
+
+        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        actionPanel.setBackground(Color.WHITE);
+
+        if ("FRIEND_REQUEST".equals(type) || "GROUP_INVITE".equals(type)) {
+            JButton acceptButton = new JButton("Aceptar");
+            JButton declineButton = new JButton("Rechazar");
+
+            acceptButton.addActionListener(e -> {
+                sendAcceptRequest(type, relatedId);
+                notificationsContainer.remove(card);
+                notificationsContainer.revalidate();
+                notificationsContainer.repaint();
+                JOptionPane.showMessageDialog(this, "Solicitud aceptada.");
+            });
+
+            declineButton.addActionListener(e -> {
+                sendDeclineRequest(type, relatedId);
+                notificationsContainer.remove(card);
+                notificationsContainer.revalidate();
+                notificationsContainer.repaint();
+                JOptionPane.showMessageDialog(this, "Solicitud rechazada.");
+            });
+
+            actionPanel.add(acceptButton);
+            actionPanel.add(declineButton);
+        } else {
+            JButton dismissButton = new JButton("Eliminar");
+            dismissButton.addActionListener(e -> {
+                notificationsContainer.remove(card);
+                notificationsContainer.revalidate();
+                notificationsContainer.repaint();
+            });
+            actionPanel.add(dismissButton);
+        }
+
+        card.add(actionPanel, BorderLayout.EAST);
+        notificationsContainer.add(card);
+        notificationsContainer.revalidate();
+        notificationsContainer.repaint();
+    }
+
+    private void sendAcceptRequest(String type, String relatedId) {
+        Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
+        if (conn == null) {
+            System.out.println("No hay conexión activa con el servidor.");
+            return;
+        }
+        Messages.MessagePacket packet;
+        if ("FRIEND_REQUEST".equals(type)) {
+            packet = Messages.MessagePacket.event(Network.Protocol.FRIEND_ACCEPT);
+            packet.add("requestId", relatedId);
+        } else {
+            packet = Messages.MessagePacket.event(Network.Protocol.GROUP_INVITE_ACCEPT);
+            packet.add("inviteId", relatedId);
+        }
+        conn.sendPacket(packet);
+    }
+
+    private void sendDeclineRequest(String type, String relatedId) {
+        Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
+        if (conn == null) {
+            System.out.println("No hay conexión activa con el servidor.");
+            return;
+        }
+        Messages.MessagePacket packet;
+        if ("FRIEND_REQUEST".equals(type)) {
+            packet = Messages.MessagePacket.event(Network.Protocol.FRIEND_DECLINE);
+            packet.add("requestId", relatedId);
+        } else {
+            packet = Messages.MessagePacket.event(Network.Protocol.GROUP_INVITE_DECLINE);
+            packet.add("inviteId", relatedId);
+        }
+        conn.sendPacket(packet);
+    }
+
+    public void loadConversationMessages(java.util.List<Messages.MessagePacket> messages) {
+        messagesContainer.removeAll();
+        addMessageBubble("Sistema", "Historial de " + selectedChat + " cargado.", false);
+        for (Messages.MessagePacket msg : messages) {
+            String from = msg.getParam("from");
+            String text = msg.getParam("text");
+            boolean isSelf = "Yo".equalsIgnoreCase(from);
+            addMessageBubble(from != null ? from : "Desconocido", text, isSelf);
+        }
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
+    }
+
+    public void appendIncomingMessage(String from, String text) {
+        if (messagesContainer != null) {
+            boolean isSelf = "Yo".equalsIgnoreCase(from);
+            addMessageBubble(from != null ? from : "Desconocido", text, isSelf);
+        }
     }
 
     private JPanel createMainSplitPanel(JPanel leftPanel, JPanel rightPanel) {
@@ -315,10 +448,13 @@ public class Content extends JFrame {
         chatTitleLabel = new JLabel(selectedChat);
         chatTitleLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        chatArea = new JTextArea();
-        chatArea.setEditable(false);
-        chatArea.setLineWrap(true);
-        chatArea.setWrapStyleWord(true);
+        messagesContainer = new JPanel();
+        messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
+        messagesContainer.setBackground(Color.WHITE);
+
+        messagesScrollPane = new JScrollPane(messagesContainer);
+        messagesScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        messagesScrollPane.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
 
         messageField = new JTextField();
 
@@ -332,7 +468,7 @@ public class Content extends JFrame {
         bottomPanel.add(sendButton, BorderLayout.EAST);
 
         panel.add(chatTitleLabel, BorderLayout.NORTH);
-        panel.add(new JScrollPane(chatArea), BorderLayout.CENTER);
+        panel.add(messagesScrollPane, BorderLayout.CENTER);
         panel.add(bottomPanel, BorderLayout.SOUTH);
 
         return panel;
@@ -351,9 +487,31 @@ public class Content extends JFrame {
             chatTitleLabel.setText(selectedChat);
         }
 
-        if (chatArea != null) {
-            chatArea.setText("");
-            chatArea.append("Sistema: Abriste " + selectedChat + "\n");
+        if (messagesContainer != null) {
+            messagesContainer.removeAll();
+            addMessageBubble("Sistema", "Abriste " + selectedChat, false);
+            messagesContainer.revalidate();
+            messagesContainer.repaint();
+            if (messagesScrollPane != null) {
+                messagesScrollPane.revalidate();
+                messagesScrollPane.repaint();
+            }
+        }
+
+        Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
+        if (conn != null) {
+            Messages.MessagePacket packet;
+            if (selectedChat.startsWith("Chat del grupo:")) {
+                String groupName = selectedChat.replace("Chat del grupo: ", "").trim();
+                packet = Messages.MessagePacket.event(Network.Protocol.GROUP_HISTORY);
+                packet.add("groupName", groupName);
+            } else {
+                String username = getNameOnly(selectedChat.replace("Chat privado con ", "").replace("Chat con ", "").trim());
+                packet = Messages.MessagePacket.event(Network.Protocol.FRIEND_MSG);
+                packet.setAction("FETCH_HISTORY"); // O según el protocolo del servidor
+                packet.add("username", username);
+            }
+            conn.sendPacket(packet);
         }
     }
 
@@ -369,10 +527,109 @@ public class Content extends JFrame {
             return;
         }
 
-        chatArea.append("Yo: " + text + "\n");
-        messageField.setText("");
+        Network.ServerConnection conn = Network.ClientRouter.getServerConnection();
+        if (conn != null) {
+            Messages.MessagePacket packet;
+            if (selectedChat.startsWith("Chat del grupo:")) {
+                String groupName = selectedChat.replace("Chat del grupo: ", "").trim();
+                packet = Messages.MessagePacket.event(Network.Protocol.GROUP_MSG);
+                packet.add("groupName", groupName);
+                packet.add("text", text);
+            } else {
+                String username = getNameOnly(selectedChat.replace("Chat privado con ", "").replace("Chat con ", "").trim());
+                packet = Messages.MessagePacket.event(Network.Protocol.FRIEND_MSG);
+                packet.add("toUser", username);
+                packet.add("text", text);
+            }
+            conn.sendPacket(packet);
+        }
 
-        notificationsModel.addElement("Mensaje enviado en " + selectedChat);
+        addMessageBubble("Yo", text, true);
+        messageField.setText("");
+    }
+
+    private void addMessageBubble(String sender, String text, boolean isSelf) {
+        JPanel wrapper = new JPanel(new FlowLayout(isSelf ? FlowLayout.RIGHT : FlowLayout.LEFT, 10, 1)) {
+            @Override
+            public Dimension getMaximumSize() {
+                Dimension pref = getPreferredSize();
+                return new Dimension(Integer.MAX_VALUE, pref.height);
+            }
+        };
+        wrapper.setOpaque(false);
+
+        // Sender label
+        JLabel senderLabel = new JLabel(isSelf ? "Yo" : sender);
+        senderLabel.setFont(new Font("SansSerif", Font.BOLD, 10));
+        senderLabel.setForeground(Color.GRAY);
+
+        // Bubble shape panel
+        JPanel bubble = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // Si es propio: azul suave; si es ajeno o sistema: gris suave
+                if ("Sistema".equalsIgnoreCase(sender)) {
+                    g2.setColor(new Color(245, 245, 245));
+                } else {
+                    g2.setColor(isSelf ? new Color(195, 235, 255) : new Color(230, 230, 230));
+                }
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        bubble.setOpaque(false);
+        bubble.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        bubble.setLayout(new BorderLayout());
+
+        // Text inside bubble
+        JTextArea textArea = new JTextArea(text);
+        textArea.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        if ("Sistema".equalsIgnoreCase(sender)) {
+            textArea.setFont(new Font("SansSerif", Font.ITALIC, 11));
+            textArea.setForeground(Color.DARK_GRAY);
+        }
+        textArea.setEditable(false);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setOpaque(false);
+        textArea.setBackground(new Color(0,0,0,0));
+        textArea.setColumns(25);
+        bubble.add(textArea, BorderLayout.CENTER);
+
+        // Si es propio (isSelf), primero va la burbuja y luego la etiqueta "Yo" a la derecha
+        // Si es ajeno, primero va la etiqueta con el nombre del remitente y luego la burbuja a la derecha
+        if (isSelf) {
+            wrapper.add(bubble);
+            wrapper.add(Box.createHorizontalStrut(5));
+            wrapper.add(senderLabel);
+        } else {
+            if (!"Sistema".equalsIgnoreCase(sender)) {
+                wrapper.add(senderLabel);
+                wrapper.add(Box.createHorizontalStrut(5));
+            }
+            wrapper.add(bubble);
+        }
+
+        messagesContainer.add(wrapper);
+        messagesContainer.add(Box.createVerticalStrut(2));
+        
+        messagesContainer.revalidate();
+        messagesContainer.repaint();
+        if (messagesScrollPane != null) {
+            messagesScrollPane.revalidate();
+            messagesScrollPane.repaint();
+        }
+
+        // Scroll to bottom
+        SwingUtilities.invokeLater(() -> {
+            if (messagesScrollPane != null) {
+                JScrollBar vertical = messagesScrollPane.getVerticalScrollBar();
+                vertical.setValue(vertical.getMaximum());
+            }
+        });
     }
 
     private String getNameOnly(String text) {
@@ -385,6 +642,21 @@ public class Content extends JFrame {
 
     private void showCard(String card) {
         cardLayout.show(contentPanel, card);
+        if (CARD_USERS.equals(card) && usersSplitPane != null) {
+            usersSplitPane.add(chatPanel, BorderLayout.CENTER);
+            usersSplitPane.revalidate();
+            usersSplitPane.repaint();
+        } else if (CARD_FRIENDS.equals(card) && friendsSplitPane != null) {
+            friendsSplitPane.add(chatPanel, BorderLayout.CENTER);
+            friendsSplitPane.revalidate();
+            friendsSplitPane.repaint();
+        } else if (CARD_GROUPS.equals(card) && groupsSplitPane != null) {
+            groupsSplitPane.add(chatPanel, BorderLayout.CENTER);
+            groupsSplitPane.revalidate();
+            groupsSplitPane.repaint();
+        }
+        revalidate();
+        repaint();
     }
 
     private void showWarning(String message) {

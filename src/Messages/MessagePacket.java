@@ -15,6 +15,10 @@ public class MessagePacket {
     private String action;
     private String token;
     private Map<String, Object> payload;
+
+    public MessagePacket() {
+        this.payload = new java.util.HashMap<>();
+    }
     
     public String getParam(String key) {
         Object value = payload.get(key);
