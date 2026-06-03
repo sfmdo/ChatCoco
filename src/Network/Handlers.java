@@ -51,6 +51,8 @@ public class Handlers {
                     mainWindow.setVisible(true);
                     mainWindow.getUserService().fetchUsers(); 
                     mainWindow.getNotificationService().fetchNotifications();
+                    mainWindow.getGroupService().fetchMyGroups();
+                    mainWindow.getFriendService().fetchFriendsList();
                     loginWindow.dispose();
                     loginWindow = null;
                 }
@@ -126,19 +128,28 @@ public class Handlers {
                 break;
 
             case Protocol.GROUP_MSG:
-                // Regla: En grupos no comparamos el 'from', sino el 'groupId'
+                // 1. Extraer y limpiar el ID del grupo del paquete entrante
                 String msgGroupId = packet.getParam("groupId");
-                if (msgGroupId != null && msgGroupId.endsWith(".0")) msgGroupId = msgGroupId.substring(0, msgGroupId.length() - 2);
-
-                if ("GROUP".equals(panel.getCurrentContext()) && 
-                    String.valueOf(panel.getCurrentTargetId()).equals(msgGroupId)) {
-                
-                    // Pintamos el nombre del integrante para saber quién escribió en el grupo
-                    SwingUtilities.invokeLater(() -> panel.addBubble(fromName, text, false));
-                } else {
-                    LOGGER.log(Level.INFO, "Actividad en el grupo {0} detectada.", msgGroupId);
+                if (msgGroupId != null && msgGroupId.endsWith(".0")) {
+                    msgGroupId = msgGroupId.substring(0, msgGroupId.length() - 2);
                 }
-                break;
+
+                // 2. Verificar si el usuario tiene abierta la pestaña de grupos y ese ID específico
+                String currentOpenId = String.valueOf(panel.getCurrentTargetId());
+    
+                if ("GROUP".equals(panel.getCurrentContext()) && currentOpenId.equals(msgGroupId)) {
+        
+                    LOGGER.log(Level.INFO, "Mensaje nuevo detectado en el grupo actual ({0}). Recargando historial...", msgGroupId);
+        
+                    // 3. ¡LA CLAVE!: En lugar de pintar un mensaje, pedimos al servidor la "foto" actualizada de la DB
+                    int idInt = Integer.parseInt(msgGroupId);
+                    mainWindow.getGroupService().fetchHistory(idInt);
+        
+                } else {
+                    // Si el usuario está en otro chat, solo lo registramos en el log
+                    LOGGER.log(Level.INFO, "Actividad en el grupo {0} detectada en segundo plano.", msgGroupId);
+                }
+            break;
             
             default:
                 LOGGER.log(Level.WARNING, "Contexto de mensaje desconocido: {0}", action);
@@ -198,7 +209,7 @@ public class Handlers {
     
         Type listType = new TypeToken<ArrayList<Models.User>>(){}.getType();
         List<Models.User> users = gson.fromJson(json, listType);
-        LOGGER.log(Level.INFO, "Cargando historial para:");
+        LOGGER.log(Level.INFO, "Cargando usuarios");
         // 3. Ahora sí, mandamos la lista de objetos REALES a la UI
         if (mainWindow != null) {
             String myIdStr = mainWindow.getAuthService().getMyId();
@@ -241,6 +252,98 @@ public class Handlers {
                     mainWindow.getUsersView().resetFriendButton();
                 }
             });
+        }
+    }
+    
+    public void handleFriendListResponse(MessagePacket packet) {
+        if ("success".equals(packet.getParam("status"))) {
+            // 1. Re-parseo de seguridad
+            Object rawData = packet.getPayload().get("friends");
+            com.google.gson.Gson gson = new com.google.gson.Gson();
+            java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.ArrayList<Models.User>>(){}.getType();
+            java.util.List<Models.User> friends = gson.fromJson(gson.toJson(rawData), type);
+            
+            // 2. Inyectar en la vista de amigos
+            if (mainWindow != null && mainWindow.getFriendsView() != null) {
+                LOGGER.log(Level.INFO, "Cargando amigos");
+                // Usamos el método genérico updateUIList que ya tienes en Content
+                mainWindow.updateFriendsList(friends);
+                LOGGER.log(Level.INFO, "Lista de amigos actualizada en la UI.");
+            }
+        }
+    }
+    
+    public void handleFriendHistoryResponse(MessagePacket packet) {
+        if ("success".equals(packet.getParam("status"))) {
+            // 1. Obtener la data cruda (Mapas genéricos)
+            Object rawData = packet.getPayload().get("history");
+        
+            // 2. Convertir a la lista real de objetos PrivateMessages
+            Gson gson = new Gson();
+            String json = gson.toJson(rawData);
+            // Usamos el modelo PrivateMessages que proporcionaste
+            java.lang.reflect.Type type = new TypeToken<ArrayList<Models.PrivateMessages>>(){}.getType();
+            List<Models.PrivateMessages> history = gson.fromJson(json, type);
+
+            if (mainWindow != null) {
+                // 3. Obtenemos nuestra ID y mandamos al panel de chat
+                int myId = Integer.parseInt(mainWindow.getAuthService().getMyId());
+                mainWindow.getChatPanel().loadFriendHistory(history, myId);
+            }
+        }
+    }
+    
+    public void handleGroupListResponse(MessagePacket packet) {
+        if ("success".equals(packet.getParam("status"))) {
+            // 1. Obtener la data cruda y re-parsear a objetos Group reales
+            Object rawData = packet.getPayload().get("groups");
+            com.google.gson.Gson gson = new com.google.gson.Gson();
+            java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.ArrayList<Models.Group>>(){}.getType();
+            java.util.List<Models.Group> groups = gson.fromJson(gson.toJson(rawData), type);
+
+            // 2. Inyectar en la UI de forma segura
+            if (mainWindow != null && mainWindow.getGroupsView() != null) {
+                // Usamos el método genérico updateUIList que definimos en Content
+                mainWindow.updateUIList(mainWindow.getGroupsView().getGroupsModel(), groups);
+                LOGGER.log(Level.INFO, "Lista de grupos actualizada ({0} grupos).", groups.size());
+            }
+        }
+    }
+    
+    public void handleGroupHistoryResponse(MessagePacket packet) {
+        LOGGER.log(Level.INFO, "Recibida respuesta de historial de grupo.");
+
+        String status = packet.getParam("status");
+    
+        if ("success".equals(status)) {
+            try {
+                // 1. Obtener la data cruda del payload
+                Object rawData = packet.getPayload().get("history");
+            
+                // 2. Conversión de seguridad con Gson (Evita ClassCastException)
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.ArrayList<Models.GroupMessages>>(){}.getType();
+                java.util.List<Models.GroupMessages> history = gson.fromJson(gson.toJson(rawData), type);
+
+                // 3. Verificación de la ventana principal
+                if (mainWindow != null) {
+                    int myId = Integer.parseInt(mainWindow.getAuthService().getMyId());
+                
+                    LOGGER.log(Level.INFO, "Cargando {0} mensajes en el ChatPanel.", history.size());
+                
+                    // 4. Actualizar la interfaz
+                    mainWindow.getChatPanel().loadGroupHistory(history, myId);
+                } else {
+                    LOGGER.log(Level.WARNING, "No se pudo cargar el historial: La ventana principal (mainWindow) es nula.");
+                }
+            
+            } catch (Exception e) {
+                LOGGER.log(Level.ERROR, "Error crítico al procesar el historial de grupo", e);
+            }
+        } else {
+            String reason = packet.getParam("reason");
+            LOGGER.log(Level.WARNING, "El servidor rechazó la petición de historial. Razón: {0}", 
+                       (reason != null ? reason : "Desconocida"));
         }
     }
     

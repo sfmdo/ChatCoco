@@ -75,6 +75,27 @@ public class ChatPanel extends JPanel {
         return this.targetId;
     }
     
+    public void loadFriendHistory(List<Models.PrivateMessages> history, int myUserId) {
+        SwingUtilities.invokeLater(() -> {
+            clearMessages(); // Limpiar el chat actual
+        
+            if (history == null || history.isEmpty()) {
+                addBubble("Sistema", "No hay mensajes previos en esta conversación.", false);
+                return;
+            }
+
+            for (Models.PrivateMessages msg : history) {
+                // Comparamos el senderId del mensaje con nuestra propia ID
+                boolean isSelf = (msg.getSenderId() == myUserId);
+            
+                // Si es mio, dice "Yo", si no, usamos el nombre del objetivo que ya tenemos guardado
+                String displayName = isSelf ? "Yo" : targetName;
+            
+                addBubble(displayName, msg.getMessage(), isSelf);
+            }
+        });
+    }
+    
     // Carga el historial que viene del servidor 
     public void loadHistory(List<GlobalMessage> history, int myUserId) {
         SwingUtilities.invokeLater(() -> {
@@ -84,6 +105,27 @@ public class ChatPanel extends JPanel {
                 boolean isSelf = String.valueOf(myUserId).equals(msg.getFromId());
                 String senderName = isSelf ? "Yo" : targetName;
                 addBubble(senderName, msg.getText(), isSelf);
+            }
+        });
+    }
+    
+    public void loadGroupHistory(java.util.List<Models.GroupMessages> history, int myUserId) {
+        SwingUtilities.invokeLater(() -> {
+            clearMessages(); // Limpiar el chat actual (burbujas de otros chats)
+        
+            if (history == null || history.isEmpty()) {
+                addBubble("Sistema", "Este es el inicio de la conversación del grupo.", false);
+                return;
+            }
+
+            for (Models.GroupMessages msg : history) {
+                // Comparamos el ID del que envió el mensaje con el mío
+                boolean isSelf = (msg.getSenderId() == myUserId);
+            
+                // Si no soy yo, ponemos "Usuario X", si soy yo ponemos "Yo"
+                String displayName = isSelf ? "Yo" : "Usuario " + msg.getSenderId();
+            
+                addBubble(displayName, msg.getMessage(), isSelf);
             }
         });
     }

@@ -23,7 +23,11 @@ public class GroupClientService {
                 .add("text", text);
         connection.sendPacket(p);
     }
-
+    
+    public void fetchMyGroups() {
+        MessagePacket p = MessagePacket.request(Protocol.GROUP_LIST);
+        connection.sendPacket(p);
+    }
     public void fetchHistory(int groupId) {
         MessagePacket p = MessagePacket.request(Protocol.GROUP_HISTORY)
                 .add("groupId", groupId);

@@ -40,7 +40,11 @@ public class ClientRouter {
                 } else if ("GROUP_INVITE".equals(subType)) {
                 // CAPTURAMOS EL ID DEL GRUPO AL QUE NOS INVITARON
                     ultimaNotificacionGroupId = packet.getIntParam("groupId");
-                    LOGGER.log(Level.INFO, "Capturada Invitación a Grupo: ID {0}", ultimaNotificacionGroupId);
+                    if (ultimaNotificacionGroupId == -1) {
+                        ultimaNotificacionGroupId = packet.getIntParam("relatedId");
+                    }
+    
+                    LOGGER.log(Level.INFO, "¡INVITACIÓN CAPTURADA!: Grupo ID {0}", ultimaNotificacionGroupId);
                 }
             
                 h.handleNotification(packet);
@@ -57,6 +61,10 @@ public class ClientRouter {
                     h.handleRegisterResponse(packet);
                     break;
                 case Protocol.FETCH_USERS: h.handleUsersListResponse(packet); break;
+                
+                case Protocol.FRIEND_LIST: h.handleFriendListResponse(packet); break;
+                
+                case Protocol.GROUP_LIST: h.handleGroupListResponse(packet); break;
                 
                 case Protocol.FRIEND_MSG:
                 case Protocol.GROUP_MSG:
@@ -105,19 +113,12 @@ public class ClientRouter {
                     break;
 
                 case Protocol.GROUP_HISTORY:
-                    // Simplemente avisar que el historial llegó (o pasarlo a la UI)
+                    h.handleGroupHistoryResponse(packet);
                     LOGGER.log(Level.INFO, "Historial de grupo recibido satisfactoriamente.");
                     break;
                     
                 case Protocol.FRIEND_HISTORY:
-                    if ("success".equals(packet.getParam("status"))) {
-                    // El servidor manda una lista en el campo "history"
-                        Object historyObj = packet.getPayload().get("history");
-                        LOGGER.log(Level.INFO, "Historial privado recibido de usuario {0}. Datos: {1}", 
-                        packet.getParam("targetUserId"), historyObj);
-        
-                        // Aquí llamarías a la UI para dibujar los mensajes en la ventana de chat
-                    }
+                    h.handleFriendHistoryResponse(packet);
                     break;
                 
                 case Protocol.GLOBAL_FETCH_HISTORY:

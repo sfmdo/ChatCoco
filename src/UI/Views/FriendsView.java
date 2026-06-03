@@ -5,113 +5,97 @@ import Models.User;
 import UI.Components.ChatPanel;
 import javax.swing.*;
 import java.awt.*;
-import java.util.List;
 
 public class FriendsView extends JPanel {
     private DefaultListModel<User> friendsModel;
     private JList<User> friendsList;
+    
     private FriendClientService friendService;
-    private ChatPanel chatPanel;
+    private ChatPanel sharedChatPanel;
 
-    public FriendsView(FriendClientService service, ChatPanel sharedChat) {
-        this.friendService = service;
-        this.chatPanel = sharedChat;
+    public FriendsView(FriendClientService friendService, ChatPanel sharedChat) {
+        this.friendService = friendService;
+        this.sharedChatPanel = sharedChat;
+        
         setLayout(new BorderLayout(10, 10));
         initComponents();
     }
 
     private void initComponents() {
-        // 1. Lista de Amigos
+        // 1. Modelo y Lista (Metadata de objetos User)
         friendsModel = new DefaultListModel<>();
         friendsList = new JList<>(friendsModel);
         friendsList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        
-        // Personalizar cómo se ve cada amigo en la lista
-        friendsList.setCellRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof User) {
-                    User user = (User) value;
-                    setText(user.getUsername() + " (" + user.getStatus() + ")");
-                    // Cambiar color según estado
-                    if ("ONLINE".equalsIgnoreCase(user.getStatus())) {
-                        setForeground(new Color(0, 150, 0)); // Verde
-                    } else {
-                        setForeground(Color.GRAY);
-                    }
-                }
-                return this;
-            }
-        });
 
-        // 2. Botones de Acción
-        JButton openChatBtn = new JButton("Abrir Chat Privado");
-        JButton addFriendBtn = new JButton("Nueva Solicitud");
-        JButton removeBtn = new JButton("Eliminar Amigo");
+        // 2. Botones de acción específicos para Amigos
+        JButton btnOpenChat = new JButton("Abrir Chat Privado");
+        JButton btnRemoveFriend = new JButton("Eliminar Amigo");
+        JButton btnRefresh = new JButton("Actualizar Lista");
 
-        // --- Lógica: Abrir Chat ---
-        openChatBtn.addActionListener(e -> {
+        // --- ACCIÓN: ABRIR CHAT PRIVADO ---
+        btnOpenChat.addActionListener(e -> {
             User selected = friendsList.getSelectedValue();
             if (selected != null) {
-                chatPanel.clearMessages();
-                //chatPanel.setChatTitle("Chat con: " + selected.getUsername());
-                // Pedimos el historial al servidor
+                // 1. Limpiamos y preparamos el panel de chat
+                sharedChatPanel.clearMessages();
+                
+                // 2. Cambiamos el contexto a FRIEND para que el botón enviar sepa a quién va
+                sharedChatPanel.setTargetContext("FRIEND", selected.getId(), selected.getUsername());
+                
+                // 3. Pedimos el historial persistente (SQL) al servidor
                 friendService.fetchFriendHistory(selected.getId());
+                
+                sharedChatPanel.addBubble("Sistema", "Cargando conversación con " + selected.getUsername() + "...", false);
             } else {
                 JOptionPane.showMessageDialog(this, "Selecciona un amigo de la lista.");
             }
         });
 
-        // --- Lógica: Enviar Solicitud ---
-        addFriendBtn.addActionListener(e -> {
-            String targetName = JOptionPane.showInputDialog(this, "Escribe el nombre del usuario:");
-            if (targetName != null && !targetName.trim().isEmpty()) {
-                // Mandamos el NOMBRE al servidor, el servidor buscará la ID
-                //friendService.sendFriendRequestByName(targetName.trim());
-                JOptionPane.showMessageDialog(this, "Solicitud enviada a " + targetName);
-            }
-        });
-
-        // --- Lógica: Eliminar ---
-        removeBtn.addActionListener(e -> {
+        // --- ACCIÓN: ELIMINAR AMIGO ---
+        btnRemoveFriend.addActionListener(e -> {
             User selected = friendsList.getSelectedValue();
             if (selected != null) {
-                int confirm = JOptionPane.showConfirmDialog(this, "¿Eliminar a " + selected.getUsername() + "?");
+                int confirm = JOptionPane.showConfirmDialog(this, 
+                    "¿Estás seguro de eliminar a " + selected.getUsername() + "?\nSe borrará todo el historial de mensajes.", 
+                    "Confirmar eliminación", JOptionPane.YES_NO_OPTION);
+                
                 if (confirm == JOptionPane.YES_OPTION) {
-                    // El usuario seleccionó un nombre, pero el código manda la ID
-                    //friendService.removeFriend(selected.getId()); 
+                    // Llamamos al servicio (necesitarás implementar removeFriend en el service)
+                    // friendService.removeFriend(selected.getId());
                     friendsModel.removeElement(selected);
                 }
             }
         });
 
-        // 3. Ensamblado de Paneles
+        // --- ACCIÓN: REFRESCAR LISTA ---
+        btnRefresh.addActionListener(e -> {
+            friendService.fetchFriendsList();
+            btnRefresh.setEnabled(false);
+            btnRefresh.setText("Cargando...");
+            
+            new javax.swing.Timer(2000, evt -> {
+                btnRefresh.setText("Actualizar Lista");
+                btnRefresh.setEnabled(true);
+            }).start();
+        });
+
+        // 3. Diseño del panel izquierdo (Espejo de UsersView)
         JPanel leftPanel = new JPanel(new BorderLayout(5, 5));
         leftPanel.setBorder(BorderFactory.createTitledBorder("Mis Amigos"));
         leftPanel.add(new JScrollPane(friendsList), BorderLayout.CENTER);
-
-        JPanel btnPanel = new JPanel(new GridLayout(3, 1, 5, 5));
-        btnPanel.add(openChatBtn);
-        btnPanel.add(addFriendBtn);
-        btnPanel.add(removeBtn);
-        leftPanel.add(btnPanel, BorderLayout.SOUTH);
+        
+        JPanel buttons = new JPanel(new GridLayout(3, 1, 5, 5));
+        buttons.add(btnOpenChat);
+        buttons.add(btnRemoveFriend);
+        buttons.add(btnRefresh);
+        
+        leftPanel.add(buttons, BorderLayout.SOUTH);
 
         leftPanel.setPreferredSize(new Dimension(250, 0));
         add(leftPanel, BorderLayout.WEST);
-        
-        // El centro queda vacío para que Content.java coloque el ChatPanel compartido
     }
 
-    /**
-     * Método para que los Handlers actualicen la lista cuando el servidor responda
-     */
-    public void setFriendsList(List<User> friends) {
-        SwingUtilities.invokeLater(() -> {
-            friendsModel.clear();
-            for (User u : friends) {
-                friendsModel.addElement(u);
-            }
-        });
-    }
+    // Getters para Handlers y Content
+    public JList<User> getFriendsList() { return friendsList; }
+    public DefaultListModel<User> getModel() { return friendsModel; }
 }

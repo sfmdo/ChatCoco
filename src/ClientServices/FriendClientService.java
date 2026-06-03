@@ -42,4 +42,9 @@ public class FriendClientService {
                 .add("friendshipId", friendshipId);
         connection.sendPacket(p);
     }
+    
+    public void fetchFriendsList() {
+        MessagePacket p = MessagePacket.request(Protocol.FRIEND_LIST);
+        connection.sendPacket(p);
+    }
 }
