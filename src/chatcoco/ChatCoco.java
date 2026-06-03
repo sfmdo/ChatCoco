@@ -5,93 +5,67 @@
 package chatcoco;
 
 import ClientServices.*;
-import Network.ClientRouter;
+import Network.Handlers;
 import Network.ServerConnection;
-import java.io.IOException;
+import UI.Login;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import javax.swing.UIManager;
 
 /**
  *
  * @author sfmdo
  */
 public class ChatCoco {
-    private static final Logger LOGGER = System.getLogger("TestClient");
-    private static ServerConnection connection;
+    private static final Logger LOGGER = System.getLogger("ClientMain");
     /**
      * @param args the command line arguments
      */
-    public static void main(String[] args) throws IOException {
-            try {
-            LOGGER.log(Level.INFO, "=== INICIANDO PRUEBA DE CICLO COMPLETO ===");
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            // Ignorar si falla
+        }
 
-            // --- CLIENTE 1 (Usuario 5) ---
-            ServerConnection c1 = new ServerConnection("localhost", 6767, null);
-            new Thread(c1).start();
-            AuthClientService auth1 = new AuthClientService(c1);
-            GroupClientService groups1 = new GroupClientService(c1);
-            FriendClientService social1 = new FriendClientService(c1);
+        try {
+            LOGGER.log(Level.INFO, "Conectando al servidor...");
 
-            // --- CLIENTE 2 (Usuario 7) ---
-            ServerConnection c2 = new ServerConnection("localhost", 6767, null);
-            new Thread(c2).start();
-            AuthClientService auth2 = new AuthClientService(c2);
-            GroupClientService groups2 = new GroupClientService(c2);
-            FriendClientService social2 = new FriendClientService(c2);
+            // 2. Iniciar la conexión de red (Capa 1)
+            // Usamos el puerto 6767 que definimos en el ServerCore
+            ServerConnection connection = new ServerConnection("localhost", 6767, null);
+            Handlers.getInstance().setConnection(connection); 
+            // 3. Arrancar el hilo que escucha al servidor en segundo plano
+            Thread networkThread = new Thread(connection);
+            networkThread.setDaemon(true); // Se cierra automáticamente si la app se cierra
+            networkThread.start();
 
-            // 1. Logins
-            auth1.login("tester1", "clave123");
-            auth2.login("tester2", "clave123");
-            esperar(2000);
+            // 4. Inicializar el Servicio de Autenticación
+            AuthClientService authService = new AuthClientService(connection);
 
-            // 2. Crear Grupo e Invitar (Usuario 5)
-            groups1.createGroup("Grupo Final");
-            esperar(2000);
-            int groupId = ClientRouter.ultimoGroupIdRecibido;
-            groups1.sendGroupInvitation(groupId, 7);
-            groups1.sendGroupInvitation(groupId, 9); // Invitamos al 9 aunque no esté en este hilo para cumplir la regla de 3
-            esperar(1000);
-
-            // 3. Aceptar Grupo (Usuario 7)
-            LOGGER.log(Level.INFO, "Usuario 7 aceptando invitación al grupo {0}...", groupId);
-            groups2.acceptGroupInvitation(groupId);
-            esperar(1500);
-
-            // 4. Chat de Grupo (Ahora Usuario 7 ya es miembro oficial)
-            groups1.sendGroupMessage(groupId, "¡Hola Tester2! Bienvenido al grupo.");
-            esperar(1000);
-
-            // 5. Flujo de Amistad (5 pide a 7)
-            social1.sendFriendRequest(7);
-            esperar(2000);
-            
-            // 6. Aceptar Amistad (Usuario 7 usa la ID que llegó por notificación)
-            int fId = ClientRouter.ultimaNotificacionFriendshipId;
-            int reqId = ClientRouter.ultimaNotificacionRequesterId;
-            if (fId != -1) {
-                LOGGER.log(Level.INFO, "Usuario 7 aceptando amistad {0} de usuario {1}...", fId, reqId);
-                social2.acceptFriendRequest(fId, reqId);
-            }
-            esperar(1500);
-
-            // 7. Mensaje Privado (Ahora que son amigos)
-            social1.sendPrivateMessage(7, "Este es un mensaje privado secreto");
-            esperar(1000);
-
-            // 8. Carga de Historial (Usuario 7 pide ver el historial del grupo)
-            LOGGER.log(Level.INFO, "Usuario 7 solicitando historial del grupo...");
-            groups2.fetchHistory(groupId);
-            esperar(2000);
-
-            LOGGER.log(Level.INFO, "=== FIN DEL SUPER TEST ===");
+            // 5. Lanzar la Interfaz Gráfica en el EDT (Event Dispatch Thread)
+            java.awt.EventQueue.invokeLater(() -> {
+                // Creamos la ventana pasándole su servicio
+                Login loginUI = new Login(authService);
+                
+                // IMPORTANTE: Registramos la ventana en los Handlers 
+                // para que el Router sepa a quién mandarle las respuestas
+                Handlers.getInstance().setLoginWindow(loginUI);
+                
+                // Mostrar la ventana
+                loginUI.setVisible(true);
+                
+                LOGGER.log(Level.INFO, "Interfaz de Login desplegada.");
+            });
 
         } catch (Exception e) {
-            LOGGER.log(Level.ERROR, "Fallo en el test: ", e);
+            LOGGER.log(Level.ERROR, "No se pudo iniciar el cliente. ¿Está el servidor encendido?", e);
+            javax.swing.JOptionPane.showMessageDialog(null, 
+                "Error: No se pudo conectar con el servidor.\n" + e.getMessage(), 
+                "Error de Conexión", 
+                javax.swing.JOptionPane.ERROR_MESSAGE);
+            System.exit(1);
         }
-    }
-
-    private static void esperar(int ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException e) {}
     }
     
 }

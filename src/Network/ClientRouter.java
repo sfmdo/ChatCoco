@@ -17,7 +17,7 @@ public class ClientRouter {
         try{
             String action = packet.getAction();
             String type = packet.getType(); // "RESPONSE" o "EVENT"
-
+            Handlers h = Handlers.getInstance();
             // Log informativo de lo que llega
             LOGGER.log(Level.INFO, "Paquete recibido: Tipo={0}, Acción={1}", type, action);
 
@@ -25,8 +25,7 @@ public class ClientRouter {
             if (packet.getParam("status") != null && packet.getParam("status").equals("error")) {
                 String reason = packet.getParam("reason");
                 LOGGER.log(Level.WARNING, "El servidor reportó un error en {0}: {1}", action, reason);
-                // Aquí llamarías a una función de la UI para mostrar un cuadro de error
-                return;
+                
             }
         
             if (Protocol.NOTIFICATION.equals(action)) {
@@ -44,7 +43,7 @@ public class ClientRouter {
                     LOGGER.log(Level.INFO, "Capturada Invitación a Grupo: ID {0}", ultimaNotificacionGroupId);
                 }
             
-                handleNotification(packet);
+                h.handleNotification(packet);
                 return;
             }
 
@@ -52,32 +51,29 @@ public class ClientRouter {
             switch (action) {
             
                 case Protocol.LOGIN:
-                    handleLoginResponse(packet);
+                    h.handleLoginResponse(packet);
                     break;
                 case Protocol.REGISTER:
-                    if ("success".equals(packet.getParam("status"))) {
-                        LOGGER.log(Level.INFO, "¡Registro exitoso! Ya puedes iniciar sesión.");
-                    } else {
-                        LOGGER.log(Level.WARNING, "Fallo al registrar: {0}", packet.getParam("reason"));
-                    }
+                    h.handleRegisterResponse(packet);
                     break;
+                case Protocol.FETCH_USERS: h.handleUsersListResponse(packet); break;
+                
                 case Protocol.FRIEND_MSG:
                 case Protocol.GROUP_MSG:
                 case Protocol.GLOBAL_MSG:
                     if ("EVENT".equals(type)) {
-                        handleIncomingMessage(packet, action);
+                        h.handleIncomingMessage(packet, action);
                     } else {
                         LOGGER.log(Level.INFO, "Confirmación de envío recibida para: {0}", action);
                     }
                     break;
 
                 case Protocol.NOTIFICATION:
-                    handleNotification(packet);
+                    h.handleNotification(packet);
                     break;
 
                 case Protocol.FRIEND_REQUEST:
-                    LOGGER.log(Level.INFO, "Nueva solicitud de amistad de: {0}", packet.getParam("fromName"));
-                    // UI.showFriendRequestDialog(packet);
+                    h.handleFriendRequestResponse(packet);
                     break;
                     
                 case Protocol.GROUP_CREATE:
@@ -112,11 +108,24 @@ public class ClientRouter {
                     // Simplemente avisar que el historial llegó (o pasarlo a la UI)
                     LOGGER.log(Level.INFO, "Historial de grupo recibido satisfactoriamente.");
                     break;
-
+                    
+                case Protocol.FRIEND_HISTORY:
+                    if ("success".equals(packet.getParam("status"))) {
+                    // El servidor manda una lista en el campo "history"
+                        Object historyObj = packet.getPayload().get("history");
+                        LOGGER.log(Level.INFO, "Historial privado recibido de usuario {0}. Datos: {1}", 
+                        packet.getParam("targetUserId"), historyObj);
+        
+                        // Aquí llamarías a la UI para dibujar los mensajes en la ventana de chat
+                    }
+                    break;
+                
+                case Protocol.GLOBAL_FETCH_HISTORY:
+                    h.handleGlobalHistoryResponse(packet);
                 case Protocol.FETCH_NOTIFICATIONS:
                     LOGGER.log(Level.INFO, "Sincronización de notificaciones finalizada.");
                     break;
-            
+                    
                 default:
                     LOGGER.log(Level.INFO, "Acción no manejada específicamente en el cliente: {0}", action);
                     break;
@@ -128,33 +137,5 @@ public class ClientRouter {
             }
         }
 
-    private static void handleLoginResponse(MessagePacket packet) {
-        if ("success".equals(packet.getParam("status"))) {
-            String user = packet.getParam("username");
-            LOGGER.log(Level.INFO, "¡Bienvenido {0}! Login exitoso.", user);
-            // UI.openMainWindow();
-        }
-    }
-
-    private static void handleIncomingMessage(MessagePacket packet, String context) {
-        String from = packet.getParam("from");
-        if (from != null && from.endsWith(".0")) {
-            from = from.substring(0, from.length() - 2);
-        }
-        String text = packet.getParam("text");
-        
-        LOGGER.log(Level.INFO, "[{0}] Mensaje de {1}: {2}", context, from, text);
-        
-        // Aquí es donde actualizas tu JList o JTextArea del Chat
-        // ChatWindow.appendMessage(from, text);
-    }
-
-    private static void handleNotification(MessagePacket packet) {
-        // Intentar sacar el texto del mensaje push
-        String content = packet.getParam("content");
-        if (content == null) content = "Nueva actualización de sistema";
     
-        String notifType = packet.getParam("type");
-        LOGGER.log(Level.INFO, "PUSH [{0}]: {1}", notifType, content);
-    }
 }
