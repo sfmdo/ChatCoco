@@ -16,6 +16,9 @@ public class Group {
         
     }
     
+    @Override
+    public String toString() { return groupName; }
+    
     
     
     public int getId() {

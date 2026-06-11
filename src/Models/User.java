@@ -11,6 +11,9 @@ public class User {
 
     public User() {
     }
+    
+    @Override
+    public String toString() { return username; }
 
     public User(int id, String username, String passwordHash) {
         this.id = id;

@@ -34,46 +34,33 @@ public class UsersView extends JPanel {
         JButton btnOpenChat = new JButton("Abrir Chat Global");
         JButton btnRefresh = new JButton("Actualizar Usuarios");
         btnRefresh.addActionListener(e -> {
-            // Llamamos al servicio para pedir la lista de nuevo
-            // Asumiendo que pasaste el userClientService al constructor
             userService.fetchUsers(); 
             btnRefresh.setText("Cargando...");
             btnRefresh.setEnabled(false);
-        
-            // Timer pequeño para reactivar el botón (opcional)
+            
             new javax.swing.Timer(2000, evt -> {
                 btnRefresh.setText("Actualizar Usuarios");
                 btnRefresh.setEnabled(true);
             }).start();
         });
-        // --- ACCIÓN: ABRIR CHAT (Usa Metadata) ---
         btnOpenChat.addActionListener(e -> {
             User selected = usersList.getSelectedValue();
             if (selected != null) {
-                // 1. Cambiamos el contexto visual
+
                 sharedChatPanel.clearMessages();
                 sharedChatPanel.setTargetContext("GLOBAL", selected.getId(), selected.getUsername());
-        
-                // 2. PEDIMOS EL HISTORIAL AL SERVIDOR
-                // Esto llamará a GLOBAL_FETCH_HISTORY en el servidor
                 globalChatService.fetchHistory(selected.getId());
         
                 sharedChatPanel.addBubble("Sistema", "Cargando historial desde el servidor...", false);
             }
         });
-
-        // --- ACCIÓN: AMISTAD (Usa Metadata) ---
         btnAddFriend.addActionListener(e -> {
             User selected = usersList.getSelectedValue();
             if (selected != null) {
-                // 1. Bloqueamos el botón para evitar clics repetidos
                 btnAddFriend.setEnabled(false);
                 btnAddFriend.setText("Enviando...");
 
-            // 2. Enviamos la petición
             friendService.sendFriendRequest(selected.getId());
-        
-            // El feedback final lo dará el Handler más tarde
             } else {
                 JOptionPane.showMessageDialog(this, "Selecciona un usuario de la lista.");
             }

@@ -32,7 +32,6 @@ public class Comprimir {
                 int tempi = i + 3;
                 int tempj = posVieja + 3;
 
-                // Mantenemos la corrección del límite de 15 del paso anterior
                 while (tempi < textoAComprimir.length() && 
                        textoAComprimir.charAt(tempi) == textoAComprimir.charAt(tempj) &&
                        (tempi - i) < 15) {

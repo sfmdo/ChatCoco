@@ -31,7 +31,6 @@ public class ChatPanel extends JPanel {
         initComponents();
     }
 
-    // Inyectar servicios desde Content.java
     public void setServices(ChatGlobalClientService gc, FriendClientService fs, GroupClientService gs) {
         this.globalChatService = gc;
         this.friendService = fs;
@@ -85,10 +84,8 @@ public class ChatPanel extends JPanel {
             }
 
             for (Models.PrivateMessages msg : history) {
-                // Comparamos el senderId del mensaje con nuestra propia ID
                 boolean isSelf = (msg.getSenderId() == myUserId);
             
-                // Si es mio, dice "Yo", si no, usamos el nombre del objetivo que ya tenemos guardado
                 String displayName = isSelf ? "Yo" : targetName;
             
                 addBubble(displayName, msg.getMessage(), isSelf);
@@ -96,12 +93,10 @@ public class ChatPanel extends JPanel {
         });
     }
     
-    // Carga el historial que viene del servidor 
     public void loadHistory(List<GlobalMessage> history, int myUserId) {
         SwingUtilities.invokeLater(() -> {
             clearMessages();
             for (GlobalMessage msg : history) {
-                // Comparamos IDs para saber si la burbuja va a la izquierda o derecha
                 boolean isSelf = String.valueOf(myUserId).equals(msg.getFromId());
                 String senderName = isSelf ? "Yo" : targetName;
                 addBubble(senderName, msg.getText(), isSelf);
@@ -111,7 +106,7 @@ public class ChatPanel extends JPanel {
     
     public void loadGroupHistory(java.util.List<Models.GroupMessages> history, int myUserId) {
         SwingUtilities.invokeLater(() -> {
-            clearMessages(); // Limpiar el chat actual (burbujas de otros chats)
+            clearMessages(); 
         
             if (history == null || history.isEmpty()) {
                 addBubble("Sistema", "Este es el inicio de la conversación del grupo.", false);
@@ -119,10 +114,7 @@ public class ChatPanel extends JPanel {
             }
 
             for (Models.GroupMessages msg : history) {
-                // Comparamos el ID del que envió el mensaje con el mío
                 boolean isSelf = (msg.getSenderId() == myUserId);
-            
-                // Si no soy yo, ponemos "Usuario X", si soy yo ponemos "Yo"
                 String displayName = isSelf ? "Yo" : "Usuario " + msg.getSenderId();
             
                 addBubble(displayName, msg.getMessage(), isSelf);
@@ -130,9 +122,6 @@ public class ChatPanel extends JPanel {
         });
     }
 
-    /**
-     * Añade un mensaje nuevo si pertenece a la conversación abierta.
-     */
     public void receiveMessage(int fromId, String text) {
         if (this.targetId == fromId) {
             addBubble(targetName, text, false);
@@ -164,7 +153,7 @@ public class ChatPanel extends JPanel {
         messagesContainer.revalidate();
         messagesContainer.repaint();
     }
-    // Aquí moverías tu lógica de addMessageBubble...
+    
     public void addBubble(String sender, String text, boolean isSelf) {
         JPanel wrapper = new JPanel(new FlowLayout(isSelf ? FlowLayout.RIGHT : FlowLayout.LEFT, 10, 1)) {
             @Override
@@ -175,18 +164,16 @@ public class ChatPanel extends JPanel {
         };
         wrapper.setOpaque(false);
 
-        // Sender label
+
         JLabel senderLabel = new JLabel(isSelf ? "Yo" : sender);
         senderLabel.setFont(new Font("SansSerif", Font.BOLD, 10));
         senderLabel.setForeground(Color.GRAY);
 
-        // Bubble shape panel
         JPanel bubble = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                // Si es propio: azul suave; si es ajeno o sistema: gris suave
                 if ("Sistema".equalsIgnoreCase(sender)) {
                     g2.setColor(new Color(245, 245, 245));
                 } else {
@@ -201,7 +188,6 @@ public class ChatPanel extends JPanel {
         bubble.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
         bubble.setLayout(new BorderLayout());
 
-        // Text inside bubble
         JTextArea textArea = new JTextArea(text);
         textArea.setFont(new Font("SansSerif", Font.PLAIN, 12));
         if ("Sistema".equalsIgnoreCase(sender)) {
@@ -216,8 +202,6 @@ public class ChatPanel extends JPanel {
         textArea.setColumns(25);
         bubble.add(textArea, BorderLayout.CENTER);
 
-        // Si es propio (isSelf), primero va la burbuja y luego la etiqueta "Yo" a la derecha
-        // Si es ajeno, primero va la etiqueta con el nombre del remitente y luego la burbuja a la derecha
         if (isSelf) {
             wrapper.add(bubble);
             wrapper.add(Box.createHorizontalStrut(5));
@@ -240,7 +224,6 @@ public class ChatPanel extends JPanel {
             scrollPane.repaint();
         }
 
-        // Scroll to bottom
         SwingUtilities.invokeLater(() -> {
             if (scrollPane != null) {
                 JScrollBar vertical = scrollPane.getVerticalScrollBar();

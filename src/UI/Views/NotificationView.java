@@ -20,12 +20,9 @@ public class NotificationView extends JPanel {
         this.authService = as;
         
         setLayout(new BorderLayout());
-        
-        // Botón Actualizar
         JButton btnRefresh = new JButton("Actualizar Bandeja");
         btnRefresh.addActionListener(e -> notifService.fetchNotifications());
-        
-        // Panel que contendrá las tarjetas (Scrollable)
+
         gridPanel = new JPanel();
         gridPanel.setLayout(new BoxLayout(gridPanel, BoxLayout.Y_AXIS));
         gridPanel.setBackground(new Color(230, 230, 230));
@@ -39,8 +36,7 @@ public class NotificationView extends JPanel {
 
     public void updateList(List<Notifications> list) {
         SwingUtilities.invokeLater(() -> {
-            gridPanel.removeAll(); // Limpiamos lo viejo
-        
+            gridPanel.removeAll(); 
             if (list == null || list.isEmpty()) {
                 JLabel empty = new JLabel("No tienes notificaciones pendientes.");
                 empty.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -51,17 +47,10 @@ public class NotificationView extends JPanel {
                     gridPanel.add(Box.createVerticalStrut(10));
                 }
             }
-        
-            // FORZAR EL REDIBUJO (Esto es lo que te falta)
             gridPanel.revalidate();
             gridPanel.repaint();
-        
-            // Opcional: mover el scroll al principio
-            gridPanel.scrollRectToVisible(new Rectangle(0,0,1,1));
         });
     }
-
-
 
     private JPanel createCard(Notifications n) {
         JPanel card = new JPanel(new BorderLayout(15, 10));
@@ -72,7 +61,6 @@ public class NotificationView extends JPanel {
         card.setBackground(Color.WHITE);
         card.setMaximumSize(new Dimension(500, 100));
 
-        // Icono e Información
         String titulo = n.getType().replace("_", " ");
         titulo += " DE " + n.getFrom_user_id();
         String contenido = n.getContent() != null ? n.getContent() : "Sin descripción";
@@ -85,13 +73,14 @@ public class NotificationView extends JPanel {
         
         card.add(infoLabel, BorderLayout.CENTER);
 
-        // Botones de acción
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         actions.setOpaque(false);
 
         if (n.getType().equals("FRIEND_REQUEST") || n.getType().equals("GROUP_INVITE")) {
             JButton btnAccept = new JButton("Aceptar");
-
+            btnAccept.setBackground(new Color(40, 167, 69)); // Verde
+            btnAccept.setForeground(Color.WHITE);
+            
             btnAccept.addActionListener(e -> {
                 if (n.getType().equals("FRIEND_REQUEST")) {
                     int miId = Integer.parseInt(authService.getMyId());
@@ -100,10 +89,26 @@ public class NotificationView extends JPanel {
                 } else {
                     groupService.acceptGroupInvitation(n.getRelated_id());
                 }
-                removeCard(card); // Borrado local inmediato
+                removeCard(card); 
+            });
+
+            JButton btnDecline = new JButton("Rechazar");
+            btnDecline.setBackground(new Color(220, 53, 69)); // Rojo
+            btnDecline.setForeground(Color.WHITE);
+            
+            btnDecline.addActionListener(e -> {
+                if (n.getType().equals("FRIEND_REQUEST")) {
+                    // related_id contiene el ID de la relación de amistad (friendship_id)
+                    friendService.declineFriendRequest(n.getRelated_id());
+                } else {
+                    // related_id contiene el ID del grupo (group_id)
+                    groupService.declineGroupInvitation(n.getRelated_id());
+                }
+                removeCard(card);
             });
 
             actions.add(btnAccept);
+            actions.add(btnDecline);
         } else {
             JButton btnOk = new JButton("Entendido");
             btnOk.addActionListener(e -> removeCard(card));

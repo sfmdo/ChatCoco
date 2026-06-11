@@ -3,37 +3,28 @@ package Network;
 import Messages.MessagePacket;
 import Messages.Comprimir; 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import java.io.*;
 import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 
-
-//Esta clase corre en el CLIENTE y gestiona la comunicación con el Servidor.
 public class ServerConnection implements Runnable {
-    private Socket socket;
-    private BufferedReader reader;
-    private PrintWriter writer;
-    private Gson gson = new Gson();
-    private Comprimir compresor = new Comprimir();
-    private boolean isRunning = false;
-    
     private static final Logger LOGGER = System.getLogger(ServerConnection.class.getName());
-
-    // Interfaz para que tu UI (Swing/JavaFX) se entere de los mensajes
-    public interface OnMessageReceived {
-        void onIncomingPacket(MessagePacket packet);
-    }
-    private OnMessageReceived callback;
-
-    //Constructor para conectar al servidor.
-
-    public ServerConnection(String host, int port, OnMessageReceived callback) throws IOException {
+    private static final Gson GSON = new GsonBuilder().create();
+    
+    private final Socket socket;
+    private final BufferedReader reader;
+    private final PrintWriter writer;
+    private final Comprimir compresor = new Comprimir();
+    private volatile boolean isRunning = false;
+    
+    public ServerConnection(String host, int port) throws IOException {
         this.socket = new Socket(host, port);
         this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.writer = new PrintWriter(socket.getOutputStream(), true);
-        this.callback = callback;
         this.isRunning = true;
     }
 
@@ -41,42 +32,44 @@ public class ServerConnection implements Runnable {
     public void run() {
         try {
             String lineaRecibida;
-            // El cliente se queda escuchando eventos del servidor (Mensajes, Notificaciones, etc.)
             while (isRunning && (lineaRecibida = reader.readLine()) != null) {
-                // 1. Decodificar y Descomprimir
-                byte[] dataData = Base64.getDecoder().decode(lineaRecibida);
-                char[] tokensComprimidos = bytesToChars(dataData);
-                String jsonDescomprimido = Comprimir.descomprimir(tokensComprimidos);
-
-                // 2. Convertir JSON a Objeto
-                MessagePacket packet = gson.fromJson(jsonDescomprimido, MessagePacket.class);
-                    
-                ClientRouter.route(packet); 
-                // 3. Entregar el paquete a la UI o al controlador
-                if (callback != null) {
-                    callback.onIncomingPacket(packet);
-                }
+                processIncomingLine(lineaRecibida);
             }
+        } catch (IOException e) {
+            LOGGER.log(Level.INFO, "Conexión cerrada por el servidor.");
         } catch (Exception e) {
-            LOGGER.log(Level.ERROR, "Conexión con el servidor perdida.");
+            LOGGER.log(Level.ERROR, "Error en el bucle de recepción: {0}", e.getMessage());
         } finally {
             disconnect();
         }
     }
 
-    //Envía un paquete al servidor siguiendo el pipeline:
-    //Objeto -> JSON -> Comprimir -> Base64
+    private void processIncomingLine(String linea) {
+        try {
+            byte[] data = Base64.getDecoder().decode(linea);
+            char[] comprimido = bytesToChars(data);
+            String json = Comprimir.descomprimir(comprimido);
+            MessagePacket packet = GSON.fromJson(json, MessagePacket.class);
+            
+            if (packet != null) {
+                LOGGER.log(Level.INFO, "Paquete recibido: {0}", packet.getAction());
+                ClientRouter.route(packet);
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.ERROR, "Error al procesar paquete entrante: {0}", e.getMessage());
+        }
+    }
 
     public synchronized void sendPacket(MessagePacket packet) {
         try {
-            String json = gson.toJson(packet);
+            String json = GSON.toJson(packet);
             char[] tokens = compresor.compresion(json);
-            byte[] bytesParaEnviar = charsToBytes(tokens);
-            String stringBase64 = Base64.getEncoder().encodeToString(bytesParaEnviar);
+            byte[] bytes = charsToBytes(tokens);
+            String base64 = Base64.getEncoder().encodeToString(bytes);
 
-            writer.println(stringBase64);
+            writer.println(base64);
         } catch (Exception e) {
-            LOGGER.log(Level.ERROR, "Error al enviar paquete al servidor", e);
+            LOGGER.log(Level.ERROR, "Error al enviar paquete: {0}", e.getMessage());
         }
     }
 
@@ -85,28 +78,25 @@ public class ServerConnection implements Runnable {
         try {
             if (reader != null) reader.close();
             if (writer != null) writer.close();
-            if (socket != null) socket.close();
+            if (socket != null && !socket.isClosed()) socket.close();
+            LOGGER.log(Level.INFO, "Desconectado del servidor.");
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.log(Level.ERROR, "Error al desconectar: {0}", e.getMessage());
         }
     }
 
-    // --- Métodos Auxiliares de Conversión ---
-
     private byte[] charsToBytes(char[] chars) {
-        byte[] b = new byte[chars.length * 2];
-        for (int i = 0; i < chars.length; i++) {
-            b[i * 2] = (byte) (chars[i] >> 8);
-            b[i * 2 + 1] = (byte) (chars[i]);
-        }
-        return b;
+        ByteBuffer bb = ByteBuffer.allocate(chars.length * 2);
+        for (char c : chars) bb.putChar(c);
+        return bb.array();
     }
 
     private char[] bytesToChars(byte[] bytes) {
-        char[] c = new char[bytes.length / 2];
-        for (int i = 0; i < c.length; i++) {
-            c[i] = (char) ((bytes[i * 2] << 8) | (bytes[i * 2 + 1] & 0xFF));
+        ByteBuffer bb = ByteBuffer.wrap(bytes);
+        char[] chars = new char[bytes.length / 2];
+        for (int i = 0; i < chars.length; i++) {
+            chars[i] = bb.getChar();
         }
-        return c;
+        return chars;
     }
 }

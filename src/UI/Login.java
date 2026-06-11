@@ -5,10 +5,6 @@ import Network.Handlers; // Importamos los handlers
 import javax.swing.*;
 import java.awt.Component;
 
-/**
- * Ventana de acceso al sistema.
- * Implementa protección contra spam y delegación de respuesta a Handlers.
- */
 public final class Login extends JFrame {
 
     private JLabel usernameLabel, passwordLabel, messageLabel;
@@ -20,16 +16,12 @@ public final class Login extends JFrame {
     public Login(AuthClientService authService) {
         super();
         this.authService = authService;
-        
-        // VINCULACIÓN CRÍTICA: Le decimos a Handlers que esta es la ventana activa
         Handlers.getInstance().setLoginWindow(this);
         
         init();
     }
     
   
-    // Bloquea o desbloquea la interfaz mientras se espera respuesta del servidor.
-    // Previene que el usuario envíe 800 peticiones.
  
     public void setLoading(boolean isLoading) {
         loginButton.setEnabled(!isLoading);
@@ -43,28 +35,28 @@ public final class Login extends JFrame {
     }
     
     
-    // Método para mostrar mensajes que vienen desde el servidor (vía Handlers).
+
     
     public void showMessage(String msg, boolean isError) {
         messageLabel.setText(msg);
         if (isError) {
             messageLabel.setForeground(java.awt.Color.RED);
         } else {
-            messageLabel.setForeground(new java.awt.Color(0, 150, 0)); // Verde para éxito
+            messageLabel.setForeground(new java.awt.Color(0, 150, 0)); 
         }
-        setLoading(false); // Siempre desbloqueamos al recibir respuesta
+        setLoading(false);
     }
     
     public void showErrorMessage(String msg) {
-        messageLabel.setForeground(java.awt.Color.RED); // Ponemos el texto en rojo
+        messageLabel.setForeground(java.awt.Color.RED); 
         messageLabel.setText(msg);
-        setLoading(false); // IMPORTANTE: Volvemos a habilitar la interfaz
+        setLoading(false);
     }
     
     public void showSuccessMessage(String msg) {
-        messageLabel.setForeground(new java.awt.Color(0, 150, 0)); // Ponemos el texto en verde
+        messageLabel.setForeground(new java.awt.Color(0, 150, 0)); 
         messageLabel.setText(msg);
-        setLoading(false); // Volvemos a habilitar para que el usuario pueda loguearse
+        setLoading(false); 
     }
 
     public void init() {
@@ -81,9 +73,8 @@ public final class Login extends JFrame {
 
         loginButton = new JButton("Login");
         registerButton = new JButton("Register");
-        messageLabel = new JLabel("", SwingConstants.CENTER); // Centrado
+        messageLabel = new JLabel("", SwingConstants.CENTER); 
 
-        // Posicionamiento de componentes
         setPosition(usernameLabel, 50, 50, 100, 30);
         setPosition(usernameField, 150, 50, 180, 30);
         setPosition(passwordLabel, 50, 100, 100, 30);
@@ -98,7 +89,6 @@ public final class Login extends JFrame {
         add(loginButton); add(registerButton);
         add(messageLabel);
 
-        // --- LÓGICA DE BOTÓN: LOGIN ---
         loginButton.addActionListener(e -> {
             String user = usernameField.getText().trim();
             String pass = new String(passwordField.getPassword());
@@ -109,10 +99,9 @@ public final class Login extends JFrame {
             }
 
             setLoading(true); 
-            authService.login(user, pass); // La respuesta llegará a Handlers.handleLoginResponse
+            authService.login(user, pass); 
         });
 
-        // --- LÓGICA DE BOTÓN: REGISTER ---
         registerButton.addActionListener(e -> {
             String user = usernameField.getText().trim();
             String pass = new String(passwordField.getPassword());
@@ -123,7 +112,7 @@ public final class Login extends JFrame {
             }
 
             setLoading(true); 
-            authService.register(user, pass); // La respuesta llegará a Handlers.handleRegisterResponse
+            authService.register(user, pass);
         });
     }
     
